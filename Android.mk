@@ -1,7 +1,6 @@
 ifeq ($(AB_OTA_UPDATER),true)
 LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
-LOCAL_C_INCLUDES += $(TARGET_OUT_HEADERS)/gpt-utils/inc
 LOCAL_CFLAGS += -Wall -Werror
 LOCAL_SHARED_LIBRARIES += liblog librecovery_updater_msm libcutils
 LOCAL_HEADER_LIBRARIES += libhardware_headers
@@ -13,7 +12,6 @@ LOCAL_VENDOR_MODULE := true
 include $(BUILD_SHARED_LIBRARY)
 
 include $(CLEAR_VARS)
-LOCAL_C_INCLUDES += $(TARGET_OUT_HEADERS)/gpt-utils/inc
 LOCAL_CFLAGS += -Wall -Werror
 LOCAL_SHARED_LIBRARIES += liblog librecovery_updater_msm libcutils
 LOCAL_HEADER_LIBRARIES := libhardware_headers
