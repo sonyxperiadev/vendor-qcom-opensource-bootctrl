@@ -55,8 +55,10 @@
 #define BOOT_IMG_PTN_NAME "boot"
 #define LUN_NAME_END_LOC 14
 #define BOOT_SLOT_PROP "ro.boot.slot_suffix"
+#define VENDOR_BOOTCTRL_ENABLE  "ro.vendor.bootctrl.enable"
 #define BOARD_PLATFORM_PROP  "ro.build.product"
-#define GVMQ_PLATFORM        "msmnile_gvmq"
+#define GVMGH_PLATFORM        "msmnile_gvmgh"
+#define GVMGQ_PLATFORM        "msmnile_gvmq"
 
 #define SLOT_ACTIVE 1
 #define SLOT_INACTIVE 2
@@ -85,6 +87,8 @@ using ::android::bootable::GetMiscVirtualAbMergeStatus;
 using ::android::bootable::InitMiscVirtualAbMessageIfNeeded;
 using ::android::bootable::SetMiscVirtualAbMergeStatus;
 using ::android::hardware::boot::V1_1::MergeStatus;
+
+unsigned int kMaxNumSlots = 2;
 
 //Get the value of one of the attribute fields for a partition.
 static int get_partition_attribute(char *partname,
@@ -424,9 +428,10 @@ error:
 
 bool bootcontrol_init()
 {
-	char platform[256];
+	char platform[256], vendorBootctrl[256];
 	property_get(BOARD_PLATFORM_PROP , platform, "");
-	if (!strncmp(platform, GVMQ_PLATFORM, strlen(GVMQ_PLATFORM)))
+	property_get(VENDOR_BOOTCTRL_ENABLE , vendorBootctrl, "");
+	if ((!strncmp(platform, GVMGQ_PLATFORM, strlen(GVMGQ_PLATFORM))) || (!strncmp(platform, GVMGH_PLATFORM, strlen(GVMGH_PLATFORM))) || (!strncmp(vendorBootctrl, "true", strlen("true"))))
 		mGvmqPlatform = true;
 	return InitMiscVirtualAbMessageIfNeeded();
 }
@@ -493,6 +498,8 @@ error:
 }
 
 int mark_boot_successful(){
+	unsigned cur_slot = 0;
+	cur_slot = get_current_slot();
 	if (mGvmqPlatform) {
 		std::string err;
 		std::string misc_blk_device = get_bootloader_message_blk_device(&err);
@@ -505,9 +512,16 @@ int mark_boot_successful(){
 			ALOGE(" Failed to read from %s due to %s ", misc_blk_device.c_str(), err.c_str());
 			return -1;
 		}
-		ALOGV(" bootloader_message is : boot.reserved[0] = %c, boot.reserved[1] = %c",
-					boot.reserved[0], boot.reserved[1]);
-		boot.reserved[2] = 'y';
+		ALOGV(" bootloader_message is : boot.reserved[0] = %c, boot.reserved[1] = %c boot.reserved[2] = %c, boot.reserved[3] = %c boot.reserved[4] = %c, boot.reserved[5] = %c boot.reserved[6] = %c", boot.reserved[0], boot.reserved[1], boot.reserved[2], boot.reserved[3], boot.reserved[4], boot.reserved[5], boot.reserved[6]);
+		if (cur_slot == 0) {
+			ALOGV("slot=0 and mark_boot_successful reserved[2] = y");
+			boot.reserved[3] = 'y';
+			boot.reserved[2] = 'y';
+		} if (cur_slot == 1) {
+			ALOGV("slot=1 and mark boot successful reserved[4] = y");
+			boot.reserved[5] = 'y';
+			boot.reserved[2] = 'y';
+		}
 		if (!write_bootloader_message_to(boot, misc_blk_device, &err)) {
 			ALOGE("Failed to write to %s  because : %s", misc_blk_device.c_str(), err.c_str());
 			return -1;
@@ -517,12 +531,10 @@ int mark_boot_successful(){
 			ALOGE("Failed to read from %s due to %s ", misc_blk_device.c_str(), err.c_str());
 			return -1;
 		}
-		ALOGV(" bootloader_message : boot_verify.reserved[0] = %c, boot_verify.reserved[1] = %c,boot_verify.reserved[2] = %c",
-				boot_verify.reserved[0],boot_verify.reserved[1], boot_verify.reserved[2]);
+		ALOGV(" bootloader_message : boot_verify.reserved[0] = %c, boot_verify.reserved[1] = %c, boot_verify.reserved[2] = %c, boot_verify.reserved[3] = %c, boot_verify.reserved[4] = %c, boot_verify.reserved[5] = %c, boot.reserved[6] = %c", boot_verify.reserved[0],boot_verify.reserved[1], boot_verify.reserved[2], boot_verify.reserved[3],boot_verify.reserved[4], boot_verify.reserved[5], boot_verify.reserved[6]);
+		return 0;
 	}
 
-	unsigned cur_slot = 0;
-	cur_slot = get_current_slot();
 	if (update_slot_attribute(slot_suffix_arr[cur_slot],
 				ATTR_BOOT_SUCCESSFUL)) {
 		goto error;
@@ -549,15 +561,35 @@ int set_active_boot_slot(unsigned slot)
 			return -1;
 		}
 		bootloader_message boot;
-		if(current_slot == 0)
+		if (!read_bootloader_message_from(&boot, misc_blk_device, &err)) {
+			ALOGE("Failed to read from %s due to %s ", misc_blk_device.c_str(), err.c_str());
+			return -1;
+		}
+		if((current_slot == 0) && (slot == 0)) {
 			boot.reserved[0] = 'a';
-		else
-			boot.reserved[0] = 'b';
-		if(slot == 0)
 			boot.reserved[1] = 'a';
-		else
+			boot.reserved[2] = '\0';
+			boot.reserved[3] = '\0';
+			boot.reserved[4] = '\0';
+		} else if ((current_slot == 0) && (slot == 1)) {
+			boot.reserved[0] = 'a';
 			boot.reserved[1] = 'b';
-		boot.reserved[2] = '\0';
+			boot.reserved[2] = '\0';
+			boot.reserved[5] = '\0';
+			boot.reserved[6] = '\0';
+		} else if ((current_slot == 1) && (slot == 0)) {
+			boot.reserved[0] = 'b';
+			boot.reserved[1] = 'a';
+			boot.reserved[2] = '\0';
+			boot.reserved[3] = '\0';
+			boot.reserved[4] = '\0';
+		} else if ((current_slot == 1) && (slot == 1)) {
+			boot.reserved[0] = 'b';
+			boot.reserved[1] = 'b';
+			boot.reserved[2] = '\0';
+			boot.reserved[5] = '\0';
+			boot.reserved[6] = '\0';
+		}
 		if (!write_bootloader_message_to(boot, misc_blk_device, &err)) {
 			ALOGE("Failed to write to %s  because : %s", misc_blk_device.c_str(), err.c_str());
 			return -1;
@@ -567,8 +599,7 @@ int set_active_boot_slot(unsigned slot)
 			ALOGE("Failed to read from %s due to %s ", misc_blk_device.c_str(), err.c_str());
 			return -1;
 		}
-		ALOGV("bootloader_message is : boot_verify.reserved[0] = %c, boot_verify.reserved[1] = %c,boot_verify.reserved[2] = %c",
-			boot_verify.reserved[0],boot_verify.reserved[1], boot_verify.reserved[2]);
+		ALOGV(" bootloader_message : boot_verify.reserved[0] = %c, boot_verify.reserved[1] = %c,boot_verify.reserved[2] = %c boot_verify.reserved[3] = %c, boot_verify.reserved[4] = %c,boot_verify.reserved[5] = %c boot_verify.reserved[6] = %c", boot_verify.reserved[0], boot_verify.reserved[1], boot_verify.reserved[2], boot_verify.reserved[3], boot_verify.reserved[4], boot_verify.reserved[5], boot_verify.reserved[6]);
 	}
 	map<string, vector<string>> ptn_map;
 	vector<string> ptn_vec;
@@ -654,6 +685,38 @@ int set_slot_as_unbootable(unsigned slot)
 		ALOGE("%s: Argument check failed", __func__);
 		goto error;
 	}
+	if (mGvmqPlatform) {
+		std::string err;
+		std::string misc_blk_device = get_bootloader_message_blk_device(&err);
+		if (misc_blk_device.empty()) {
+			ALOGE("Could not find bootloader message block device: %s", err.c_str());
+			return -1;
+		}
+		bootloader_message boot;
+		if (!read_bootloader_message_from(&boot, misc_blk_device, &err)) {
+			ALOGE(" Failed to read from %s due to %s ", misc_blk_device.c_str(), err.c_str());
+			return -1;
+		}
+		ALOGV(" bootloader_message is : boot.reserved[0] = %c, boot.reserved[1] = %c boot.reserved[2] = %c, boot.reserved[3] = %c boot.reserved[4] = %c, boot.reserved[5] = %c boot.reserved[6] = %c", boot.reserved[0], boot.reserved[1], boot.reserved[2], boot.reserved[3], boot.reserved[4], boot.reserved[5], boot.reserved[6]);
+		if (slot == 0) {
+			ALOGV("slot=0 and set_slot_bootable reserved[4] = y ");
+			boot.reserved[4] = 'y';
+		} if (slot == 1) {
+			ALOGV("slot=1 and set_slot_bootable reserved[6] = y");
+			boot.reserved[6] = 'y';
+		}
+		if (!write_bootloader_message_to(boot, misc_blk_device, &err)) {
+			ALOGE("Failed to write to %s  because : %s", misc_blk_device.c_str(), err.c_str());
+			return -1;
+		}
+		bootloader_message boot_verify;
+		if (!read_bootloader_message_from(&boot_verify, misc_blk_device, &err)) {
+			ALOGE("Failed to read from %s due to %s ", misc_blk_device.c_str(), err.c_str());
+			return -1;
+		}
+		ALOGV(" bootloader_message : boot_verify.reserved[0] = %c, boot_verify.reserved[1] = %c,boot_verify.reserved[2] = %c boot_verify.reserved[3] = %c, boot_verify.reserved[4] = %c,boot_verify.reserved[5] = %c boot.reserved[6] = %c", boot_verify.reserved[0],boot_verify.reserved[1], boot_verify.reserved[2], boot_verify.reserved[3],boot_verify.reserved[4], boot_verify.reserved[5], boot_verify.reserved[6]);
+		return 0;
+	}
 	if (update_slot_attribute(slot_suffix_arr[slot],
 				ATTR_UNBOOTABLE)) {
 		goto error;
@@ -665,39 +728,83 @@ error:
 }
 int is_slot_bootable(unsigned slot)
 {
+	if (boot_control_check_slot_sanity(slot) != 0) {
+		ALOGE("%s: Argument check failed", __func__);
+		return -1;
+	}
+	if (mGvmqPlatform) {
+		std::string err;
+		std::string misc_blk_device = get_bootloader_message_blk_device(&err);
+		if (misc_blk_device.empty()) {
+			ALOGE("Could not find bootloader message block device: %s", err.c_str());
+			return -1;
+		}
+		bootloader_message boot_verify;
+		if (!read_bootloader_message_from(&boot_verify, misc_blk_device, &err)) {
+			ALOGE("Failed to read from %s due to %s ", misc_blk_device.c_str(), err.c_str());
+			return -1;
+		}
+		if ((slot == 0) && (boot_verify.reserved[4] != 'y')) {
+			ALOGV("slot=0 and is_slot_bootable = y");
+			return 1;
+		}
+		if ((slot == 1) && (boot_verify.reserved[6] != 'y')) {
+			ALOGV("slot=1 and is_slot_bootable = y");
+			return 1;
+		}
+		ALOGE("slot= %u is_slot_bootable = n", slot);
+		return 0;
+	}
 	int attr = 0;
 	char bootPartition[MAX_GPT_NAME_SIZE + 1] = {0};
 
-	if (boot_control_check_slot_sanity(slot) != 0) {
-		ALOGE("%s: Argument check failed", __func__);
-		goto error;
-	}
 	snprintf(bootPartition,
 			sizeof(bootPartition) - 1, "boot%s",
 			slot_suffix_arr[slot]);
 	attr = get_partition_attribute(bootPartition, ATTR_UNBOOTABLE);
 	if (attr >= 0)
 		return !attr;
-error:
 	return -1;
 }
 
 int is_slot_marked_successful(unsigned slot)
 {
+	if (boot_control_check_slot_sanity(slot) != 0) {
+		ALOGE("%s: Argument check failed", __func__);
+		return -1;
+	}
+	if (mGvmqPlatform) {
+		std::string err;
+		std::string misc_blk_device = get_bootloader_message_blk_device(&err);
+		if (misc_blk_device.empty()) {
+			ALOGE("Could not find bootloader message block device: %s", err.c_str());
+			return -1;
+		}
+		bootloader_message boot_verify;
+		if (!read_bootloader_message_from(&boot_verify, misc_blk_device, &err)) {
+			ALOGE("Failed to read from %s due to %s ", misc_blk_device.c_str(), err.c_str());
+			return -1;
+		}
+		if ((slot == 0) && (boot_verify.reserved[3] == 'y')) {
+			ALOGV("slot=0 and is_slot_marked_successful = y");
+			return 1;
+		}
+		if ((slot == 1) && (boot_verify.reserved[5] == 'y')) {
+			ALOGV("slot=1 and is_slot_marked_successful = y");
+			return 1;
+		}
+		ALOGE("slot= %u is_slot_marked_successful = n", slot);
+		return 0;
+	}
 	int attr = 0;
 	char bootPartition[MAX_GPT_NAME_SIZE + 1] = {0};
 
-	if (boot_control_check_slot_sanity(slot) != 0) {
-		ALOGE("%s: Argument check failed", __func__);
-		goto error;
-	}
 	snprintf(bootPartition,
 			sizeof(bootPartition) - 1,
 			"boot%s", slot_suffix_arr[slot]);
 	attr = get_partition_attribute(bootPartition, ATTR_BOOT_SUCCESSFUL);
 	if (attr >= 0)
 		return attr;
-error:
 	return -1;
 }
 
