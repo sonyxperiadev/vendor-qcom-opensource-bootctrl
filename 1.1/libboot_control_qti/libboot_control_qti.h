@@ -51,3 +51,5 @@ MergeStatus get_snapshot_merge_status();
 
 // IBootControl 1.2 methods
 int get_active_boot_slot();
+
+bool mGvmqPlatform = false;
