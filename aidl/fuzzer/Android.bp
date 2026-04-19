@@ -22,6 +22,6 @@ cc_fuzz {
     ],
 
     include_dirs: [
-        "hardware/qcom/bootctrl/aidl",
+        "vendor/qcom/opensource/bootctrl/aidl",
     ],
 }
